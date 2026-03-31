@@ -1,0 +1,22 @@
+{
+  "name": "cc-gateway",
+  "version": "0.1.0",
+  "description": "Claude Code identity gateway - reverse proxy that unifies device fingerprints for shared accounts",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "generate-token": "tsx src/scripts/generate-token.ts",
+    "generate-identity": "tsx src/scripts/generate-identity.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

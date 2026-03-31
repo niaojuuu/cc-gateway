@@ -1,0 +1,67 @@
+# CC Gateway Configuration
+# Copy to config.yaml and modify
+
+server:
+  port: 8443
+  # TLS cert/key paths (required for HTTPS)
+  # Generate self-signed: openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes
+  tls:
+    cert: ./certs/cert.pem
+    key: ./certs/key.pem
+
+# Upstream Anthropic API
+upstream:
+  url: https://api.anthropic.com
+
+# Authentication - each client gets a bearer token
+# Generate tokens: npm run generate-token
+auth:
+  tokens:
+    - name: machine-a
+      token: change-me-token-1
+    - name: machine-b
+      token: change-me-token-2
+
+# Canonical identity - all clients will appear as this single device
+# Generate a fresh identity: npm run generate-identity
+identity:
+  device_id: "0000000000000000000000000000000000000000000000000000000000000000"
+  email: "user@example.com"
+
+# Canonical environment fingerprint
+# Should match a real machine's profile to look natural
+env:
+  platform: darwin
+  platform_raw: darwin
+  arch: arm64
+  node_version: v24.3.0
+  terminal: iTerm2.app
+  package_managers: npm,pnpm
+  runtimes: node
+  is_running_with_bun: false
+  is_ci: false
+  is_claubbit: false
+  is_claude_code_remote: false
+  is_local_agent_mode: false
+  is_conductor: false
+  is_github_action: false
+  is_claude_code_action: false
+  is_claude_ai_auth: true
+  version: "2.1.81"
+  version_base: "2.1.81"
+  build_time: "2026-03-20T21:26:18Z"
+  deployment_environment: unknown-darwin
+  vcs: git
+
+# Canonical process metrics (should look like a real machine)
+process:
+  constrained_memory: 34359738368  # 32GB - pick a realistic value
+  rss_range: [300000000, 500000000]  # 300-500MB realistic range
+  heap_total_range: [40000000, 80000000]
+  heap_used_range: [100000000, 200000000]
+
+# Logging
+logging:
+  level: info  # debug | info | warn | error
+  # Log which client token made each request (for auditing)
+  audit: true

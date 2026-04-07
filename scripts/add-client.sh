@@ -133,7 +133,11 @@ case "$1" in
 
   native)
     shift
-    exec command claude "$@"
+    if [[ -n "$MSYSTEM" ]] && command -v winpty &>/dev/null; then
+      exec winpty command claude "$@"
+    else
+      exec command claude "$@"
+    fi
     ;;
 
   status)
@@ -206,7 +210,12 @@ if [[ -z "$HEALTH" ]]; then
 fi
 
 # Pass all arguments through to claude
-exec claude "$@"
+# In Git Bash (MSYS2), Windows executables need winpty for interactive TTY
+if [[ -n "$MSYSTEM" ]] && command -v winpty &>/dev/null; then
+  exec winpty claude "$@"
+else
+  exec claude "$@"
+fi
 SCRIPT_BODY
 
 chmod +x "$LAUNCHER"

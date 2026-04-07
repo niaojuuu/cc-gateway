@@ -10,6 +10,17 @@ import { rewriteBody, rewriteHeaders } from './rewriter.js'
 import { audit, log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
 
+// ── Global forwarding restriction state ──
+let restricted = false
+let restrictReason = ''
+
+function setRestricted(reason: string) {
+  restricted = true
+  restrictReason = reason
+  log('warn', `⚠ Gateway forwarding RESTRICTED: ${reason}`)
+  log('warn', 'All subsequent requests will be rejected until server restart')
+}
+
 export function startProxy(config: Config) {
   initAuth(config)
 
@@ -95,6 +106,24 @@ async function handleRequest(
 
   log('info', `Client "${clientName}" → ${method} ${path}`)
 
+  // Check if gateway forwarding is restricted
+  if (restricted) {
+    res.writeHead(429, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      type: 'error',
+      error: {
+        type: 'rate_limit_error',
+        message: `Gateway forwarding restricted: ${restrictReason}`,
+      },
+      gateway_restricted: true,
+    }))
+    log('warn', `Rejected ${method} ${path} from "${clientName}" — forwarding restricted`)
+    if (config.logging.audit) {
+      audit(clientName, method, path, 429)
+    }
+    return
+  }
+
   // Get the real OAuth token (managed by gateway)
   const oauthToken = getAccessToken()
   if (!oauthToken) {
@@ -153,8 +182,75 @@ async function handleRequest(
 
       res.writeHead(status, responseHeaders)
 
-      // Stream response directly (SSE for Claude responses)
-      proxyRes.pipe(res)
+      // Detect errors from upstream response
+      if (status === 429) {
+        // Rate limited by Anthropic
+        const chunks: Buffer[] = []
+        proxyRes.on('data', (chunk) => chunks.push(chunk))
+        proxyRes.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf-8')
+          setRestricted(`Anthropic rate limited (HTTP 429): ${truncate(body, 200)}`)
+          if (!res.headersSent) {
+            res.writeHead(429, { 'Content-Type': 'application/json' })
+          }
+          res.end(body)
+        })
+        return
+      }
+
+      if (status >= 400) {
+        // Other client/server error from Anthropic — collect and check
+        const chunks: Buffer[] = []
+        proxyRes.on('data', (chunk) => chunks.push(chunk))
+        proxyRes.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf-8')
+          res.end(body)
+          // Only restrict on server-side errors (5xx), not client errors (4xx)
+          if (status >= 500) {
+            setRestricted(`Upstream error (HTTP ${status}): ${truncate(body, 200)}`)
+          }
+        })
+        return
+      }
+
+      // Stream successful response (SSE for Claude responses)
+      // Intercept data chunks to detect error events in the SSE stream
+      const contentType = String(responseHeaders['content-type'] || '')
+      const isSSE = contentType.includes('text/event-stream')
+
+      if (isSSE) {
+        let buffer = ''
+        const originalWrite = res.write.bind(res)
+
+        proxyRes.on('data', (chunk: Buffer) => {
+          originalWrite(chunk)
+
+          // Scan SSE chunks for error events
+          buffer += chunk.toString('utf-8')
+          // Keep buffer manageable — only need recent data
+          if (buffer.length > 8192) {
+            buffer = buffer.slice(-4096)
+          }
+
+          // Detect error patterns in SSE stream
+          checkSSEForRestriction(buffer)
+        })
+
+        proxyRes.on('end', () => {
+          res.end()
+        })
+
+        proxyRes.on('error', (err) => {
+          log('error', `SSE stream error: ${err.message}`)
+          setRestricted(`Upstream stream error: ${err.message}`)
+          if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Upstream stream error' }))
+          }
+        })
+      } else {
+        proxyRes.pipe(res)
+      }
 
       if (config.logging.audit) {
         audit(clientName, method, path, status)
@@ -175,6 +271,40 @@ async function handleRequest(
 
   proxyReq.write(body)
   proxyReq.end()
+}
+
+// ── Error detection helpers ──
+
+/**
+ * Check SSE stream data for error events that indicate rate limiting or throttling.
+ * Anthropic sends SSE events like:
+ *   event: error
+ *   data: {"type":"error","error":{"type":"rate_limit_error",...}}
+ */
+function checkSSEForRestriction(buffer: string) {
+  if (restricted) return
+
+  // Look for error events in SSE
+  const errorPatterns = [
+    // Rate limit error
+    { pattern: /"type"\s*:\s*"rate_limit_error"/, reason: 'Anthropic rate_limit_error in SSE stream' },
+    // Overloaded / throttled
+    { pattern: /"type"\s*:\s*"overloaded_error"/, reason: 'Anthropic overloaded_error in SSE stream' },
+    // General error event line
+    { pattern: /event:\s*error/, reason: 'Anthropic error event in SSE stream' },
+  ]
+
+  for (const { pattern, reason } of errorPatterns) {
+    if (pattern.test(buffer)) {
+      setRestricted(reason)
+      return
+    }
+  }
+}
+
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str
+  return str.slice(0, maxLen) + '...'
 }
 
 /**

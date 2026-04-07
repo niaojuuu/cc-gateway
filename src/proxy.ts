@@ -178,40 +178,43 @@ async function handleRequest(
       const status = proxyRes.statusCode || 502
 
       const responseHeaders = { ...proxyRes.headers }
+      // Remove hop-by-hop headers — Node.js http.Server auto-adds
+      // transfer-encoding: chunked when no content-length is set
       delete responseHeaders['transfer-encoding']
+      delete responseHeaders['connection']
+      // Drop content-length to avoid chunked re-encoding conflict with
+      // upstream's gzip stream — Node.js will use chunked transfer instead
+      delete responseHeaders['content-length']
 
-      res.writeHead(status, responseHeaders)
-
-      // Detect errors from upstream response
+      // Error responses: collect body, send with clean headers
       if (status === 429) {
-        // Rate limited by Anthropic
         const chunks: Buffer[] = []
         proxyRes.on('data', (chunk) => chunks.push(chunk))
         proxyRes.on('end', () => {
           const body = Buffer.concat(chunks).toString('utf-8')
           setRestricted(`Anthropic rate limited (HTTP 429): ${truncate(body, 200)}`)
-          if (!res.headersSent) {
-            res.writeHead(429, { 'Content-Type': 'application/json' })
-          }
+          res.writeHead(429, { 'Content-Type': 'application/json' })
           res.end(body)
         })
         return
       }
 
       if (status >= 400) {
-        // Other client/server error from Anthropic — collect and check
         const chunks: Buffer[] = []
         proxyRes.on('data', (chunk) => chunks.push(chunk))
         proxyRes.on('end', () => {
           const body = Buffer.concat(chunks).toString('utf-8')
+          res.writeHead(status, { 'Content-Type': 'application/json' })
           res.end(body)
-          // Only restrict on server-side errors (5xx), not client errors (4xx)
           if (status >= 500) {
             setRestricted(`Upstream error (HTTP ${status}): ${truncate(body, 200)}`)
           }
         })
         return
       }
+
+      // Success — forward upstream headers (gzip etc.) for streaming
+      res.writeHead(status, responseHeaders)
 
       // Stream successful response (SSE for Claude responses)
       // Intercept data chunks to detect error events in the SSE stream

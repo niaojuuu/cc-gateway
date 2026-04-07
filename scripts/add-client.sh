@@ -35,17 +35,17 @@ with open('$CONFIG', 'w') as f:
 fi
 
 # Generate the launcher script
-LAUNCHER="${CLIENTS_DIR}/cc-${CLIENT_NAME}"
+LAUNCHER="${CLIENTS_DIR}/cc-${CLIENT_NAME}.sh"
 cat > "$LAUNCHER" <<'SCRIPT_HEAD'
 #!/bin/bash
 # CC Gateway Client Launcher
 #
 # Usage:
-#   ./cc-<name>                    Start Claude Code through gateway
-#   ./cc-<name> --print "hello"    Single-shot mode
-#   ./cc-<name> install            Install as 'ccg' command system-wide
-#   ./cc-<name> uninstall          Remove 'ccg' and restore native claude
-#   ./cc-<name> native             Run native claude (bypass gateway, one-time)
+#   ./cc-<name>.sh                    Start Claude Code through gateway
+#   ./cc-<name>.sh --print "hello"    Single-shot mode
+#   ./cc-<name>.sh install            Install as 'ccg' command system-wide
+#   ./cc-<name>.sh uninstall          Remove 'ccg' and restore native claude
+#   ./cc-<name>.sh native             Run native claude (bypass gateway, one-time)
 SCRIPT_HEAD
 
 cat >> "$LAUNCHER" <<SCRIPT_VARS
@@ -220,6 +220,127 @@ SCRIPT_BODY
 
 chmod +x "$LAUNCHER"
 
-echo "✓ Client launcher: ${LAUNCHER}"
-echo "  Send this file to ${CLIENT_NAME}."
-echo "  They run: chmod +x cc-${CLIENT_NAME} && ./cc-${CLIENT_NAME}"
+# ── Generate Windows PowerShell launcher ──
+PS1_LAUNCHER="${CLIENTS_DIR}/cc-${CLIENT_NAME}.ps1"
+cat > "$PS1_LAUNCHER" <<PS1_HEAD
+# CC Gateway Client Launcher (PowerShell)
+#
+# Usage:
+#   .\cc-${CLIENT_NAME}.ps1                    Start Claude Code through gateway
+#   .\cc-${CLIENT_NAME}.ps1 --print "hello"    Single-shot mode
+#
+# If PowerShell blocks execution, run once:
+#   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+PS1_HEAD
+
+# Write env vars (PowerShell syntax)
+cat >> "$PS1_LAUNCHER" <<PS1_VARS
+
+\$env:GATEWAY_URL = "${GATEWAY_SCHEME}://${GATEWAY_ADDR}"
+\$env:CLIENT_TOKEN = "${CLIENT_TOKEN}"
+PS1_VARS
+
+# Add TLS bypass for self-signed certs (HTTPS mode only)
+if [[ "$GATEWAY_SCHEME" == "https" ]]; then
+  cat >> "$PS1_LAUNCHER" <<'PS1_TLS'
+
+# Accept self-signed TLS cert from gateway
+$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+PS1_TLS
+fi
+
+cat >> "$PS1_LAUNCHER" <<'PS1_BODY'
+
+# Set env vars for this process only — nothing is written to disk
+$env:ANTHROPIC_API_KEY = $env:CLIENT_TOKEN
+$env:ANTHROPIC_BASE_URL = $env:GATEWAY_URL
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+$env:CLAUDE_CODE_ATTRIBUTION_HEADER = "false"
+$env:DISABLE_TELEMETRY = "1"
+$env:DISABLE_ERROR_REPORTING = "1"
+$env:CLAUDE_CODE_ENABLE_TELEMETRY = "0"
+$env:OTEL_TRACES_EXPORTER = "none"
+$env:OTEL_METRICS_EXPORTER = "none"
+$env:OTEL_LOGS_EXPORTER = "none"
+
+# Check claude is installed
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    Write-Host "Error: 'claude' not found. Install Claude Code first:"
+    Write-Host "  npm install -g @anthropic-ai/claude-code"
+    exit 1
+}
+
+# Check gateway is reachable
+try {
+    $health = Invoke-WebRequest -Uri "$($env:GATEWAY_URL)/_health" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+    Write-Host "Gateway: OK"
+} catch {
+    Write-Host "Warning: Gateway at $($env:GATEWAY_URL) is not reachable."
+    Write-Host "Make sure the gateway is running."
+    Write-Host ""
+}
+
+# Pass all arguments through to claude
+& claude @args
+PS1_BODY
+
+# ── Generate Windows CMD launcher ──
+BAT_LAUNCHER="${CLIENTS_DIR}/cc-${CLIENT_NAME}.bat"
+cat > "$BAT_LAUNCHER" <<BAT_HEAD
+@echo off
+rem CC Gateway Client Launcher (CMD)
+rem
+rem Usage:
+rem   cc-${CLIENT_NAME}.bat                    Start Claude Code through gateway
+rem   cc-${CLIENT_NAME}.bat --print "hello"    Single-shot mode
+BAT_HEAD
+
+# Write env vars (CMD syntax)
+cat >> "$BAT_LAUNCHER" <<BAT_VARS
+
+set "GATEWAY_URL=${GATEWAY_SCHEME}://${GATEWAY_ADDR}"
+set "CLIENT_TOKEN=${CLIENT_TOKEN}"
+BAT_VARS
+
+# Add TLS bypass for self-signed certs (HTTPS mode only)
+if [[ "$GATEWAY_SCHEME" == "https" ]]; then
+  cat >> "$BAT_LAUNCHER" <<'BAT_TLS'
+
+rem Accept self-signed TLS cert from gateway
+set "NODE_TLS_REJECT_UNAUTHORIZED=0"
+BAT_TLS
+fi
+
+cat >> "$BAT_LAUNCHER" <<'BAT_BODY'
+
+set "ANTHROPIC_API_KEY=%CLIENT_TOKEN%"
+set "ANTHROPIC_BASE_URL=%GATEWAY_URL%"
+set "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
+set "CLAUDE_CODE_ATTRIBUTION_HEADER=false"
+set "DISABLE_TELEMETRY=1"
+set "DISABLE_ERROR_REPORTING=1"
+set "CLAUDE_CODE_ENABLE_TELEMETRY=0"
+set "OTEL_TRACES_EXPORTER=none"
+set "OTEL_METRICS_EXPORTER=none"
+set "OTEL_LOGS_EXPORTER=none"
+
+where claude >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Error: 'claude' not found. Install Claude Code first:
+    echo   npm install -g @anthropic-ai/claude-code
+    exit /b 1
+)
+
+rem Pass all arguments through to claude
+claude %*
+BAT_BODY
+
+echo "✓ Client launchers:"
+echo "  Bash:       ${LAUNCHER}"
+echo "  PowerShell: ${PS1_LAUNCHER}"
+echo "  CMD:        ${BAT_LAUNCHER}"
+echo ""
+echo "  Send the appropriate file to ${CLIENT_NAME}."
+echo "  Linux/Mac/Git Bash: chmod +x cc-${CLIENT_NAME}.sh && ./cc-${CLIENT_NAME}.sh"
+echo "  PowerShell:         .\cc-${CLIENT_NAME}.ps1"
+echo "  CMD:                cc-${CLIENT_NAME}.bat"

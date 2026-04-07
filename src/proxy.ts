@@ -186,35 +186,39 @@ async function handleRequest(
       // upstream's gzip stream — Node.js will use chunked transfer instead
       delete responseHeaders['content-length']
 
-      // Error responses: collect body, send with clean headers
+      // Forward all responses with upstream headers (gzip etc.)
+      res.writeHead(status, responseHeaders)
+
+      // Error responses: collect body for restriction detection, then forward
       if (status === 429) {
         const chunks: Buffer[] = []
-        proxyRes.on('data', (chunk) => chunks.push(chunk))
+        proxyRes.on('data', (chunk) => {
+          chunks.push(chunk)
+          res.write(chunk)
+        })
         proxyRes.on('end', () => {
-          const body = Buffer.concat(chunks).toString('utf-8')
-          setRestricted(`Anthropic rate limited (HTTP 429): ${truncate(body, 200)}`)
-          res.writeHead(429, { 'Content-Type': 'application/json' })
-          res.end(body)
+          const raw = Buffer.concat(chunks)
+          // Log raw bytes — may be gzip, so toString may produce garbage
+          setRestricted(`Anthropic rate limited (HTTP 429): ${raw.length} bytes`)
+          res.end()
         })
         return
       }
 
       if (status >= 400) {
         const chunks: Buffer[] = []
-        proxyRes.on('data', (chunk) => chunks.push(chunk))
+        proxyRes.on('data', (chunk) => {
+          chunks.push(chunk)
+          res.write(chunk)
+        })
         proxyRes.on('end', () => {
-          const body = Buffer.concat(chunks).toString('utf-8')
-          res.writeHead(status, { 'Content-Type': 'application/json' })
-          res.end(body)
+          res.end()
           if (status >= 500) {
-            setRestricted(`Upstream error (HTTP ${status}): ${truncate(body, 200)}`)
+            setRestricted(`Upstream error (HTTP ${status}): ${Buffer.concat(chunks).length} bytes`)
           }
         })
         return
       }
-
-      // Success — forward upstream headers (gzip etc.) for streaming
-      res.writeHead(status, responseHeaders)
 
       // Stream successful response (SSE for Claude responses)
       // Intercept data chunks to detect error events in the SSE stream

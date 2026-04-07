@@ -232,8 +232,8 @@ async function handleRequest(
             buffer = buffer.slice(-4096)
           }
 
-          // Detect error patterns in SSE stream
-          checkSSEForRestriction(buffer)
+          // Detect error patterns in SSE stream — pass full buffer for logging
+          checkSSEForRestriction(buffer, clientName, method, path)
         })
 
         proxyRes.on('end', () => {
@@ -281,7 +281,7 @@ async function handleRequest(
  *   event: error
  *   data: {"type":"error","error":{"type":"rate_limit_error",...}}
  */
-function checkSSEForRestriction(buffer: string) {
+function checkSSEForRestriction(buffer: string, clientName: string, method: string, path: string) {
   if (restricted) return
 
   // Look for error events in SSE
@@ -296,10 +296,38 @@ function checkSSEForRestriction(buffer: string) {
 
   for (const { pattern, reason } of errorPatterns) {
     if (pattern.test(buffer)) {
+      // Extract the full error event from buffer for diagnostics
+      const errorEvent = extractErrorEvent(buffer)
+      log('error', `SSE error detected from ${clientName} ${method} ${path}:`)
+      log('error', `  Pattern matched: ${reason}`)
+      log('error', `  Full SSE event:\n${errorEvent}`)
       setRestricted(reason)
       return
     }
   }
+}
+
+/**
+ * Extract the most recent complete SSE event from buffer,
+ * focusing on the error event and its data payload.
+ */
+function extractErrorEvent(buffer: string): string {
+  // Find the last "event:" block — SSE events start with "event:" line
+  const eventBlocks = buffer.split(/\n(?=event:)/)
+  const lastBlock = eventBlocks[eventBlocks.length - 1]
+
+  // Also try to extract and pretty-print the JSON data if present
+  const dataMatch = lastBlock.match(/data:\s*(\{[\s\S]*?\})\s*\n/)
+  if (dataMatch) {
+    try {
+      const parsed = JSON.parse(dataMatch[1])
+      return lastBlock.trim() + '\n\nParsed data:\n' + JSON.stringify(parsed, null, 2)
+    } catch {
+      // JSON parse failed, return raw
+    }
+  }
+
+  return lastBlock.trim()
 }
 
 function truncate(str: string, maxLen: number): string {

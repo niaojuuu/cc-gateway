@@ -158,7 +158,7 @@ async function handleRequest(
   // Inject the real OAuth token via x-api-key (Anthropic uses this header for both
   // API keys and OAuth tokens, distinguished by prefix: sk-ant-api03- vs sk-ant-oat01-)
   rewrittenHeaders['x-api-key'] = oauthToken
-  log('debug', `Forwarding with x-api-key prefix: ${oauthToken.slice(0, 12)}...`)
+  log('info', `Forwarding with x-api-key prefix: ${oauthToken.slice(0, 12)}...`)
 
   // Forward to upstream
   const upstreamUrl = new URL(path, upstream)

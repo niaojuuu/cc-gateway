@@ -222,7 +222,6 @@ async function handleRequest(
             setRestricted(`Upstream error (HTTP ${status}): ${bodyText}`)
             log('error', `Upstream ${status} response:\n${bodyText}`)
           }
-          }
         })
         return
       }

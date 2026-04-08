@@ -1,8 +1,11 @@
 import { request as httpsRequest } from 'https'
+import { readFileSync, writeFileSync } from 'fs'
+import { resolve } from 'path'
 import { log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
+const CONFIG_PATH = resolve(process.cwd(), 'config.yaml')
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const DEFAULT_SCOPES = [
   'user:inference',
@@ -67,17 +70,49 @@ function scheduleRefresh(refreshToken: string) {
 
   setTimeout(async () => {
     try {
+      const oldAccessToken = cachedTokens?.accessToken || ''
+      const oldRefreshToken = cachedTokens?.refreshToken || refreshToken
+
       log('info', 'Auto-refreshing OAuth token...')
       cachedTokens = await refreshOAuthToken(
         cachedTokens?.refreshToken || refreshToken,
       )
-      log('info', `OAuth token refreshed, expires at ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+      log('info', `Token refreshed:`)
+      log('info', `  access_token:  ${oldAccessToken.slice(0, 12)}... → ${cachedTokens.accessToken.slice(0, 12)}...`)
+      log('info', `  refresh_token: ${oldRefreshToken.slice(0, 12)}... → ${cachedTokens.refreshToken.slice(0, 12)}...`)
+      log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+      persistTokens()
       scheduleRefresh(cachedTokens.refreshToken || refreshToken)
     } catch (err) {
       log('error', `OAuth refresh failed: ${err}. Retrying in 30s...`)
       setTimeout(() => scheduleRefresh(refreshToken), 30_000)
     }
   }, refreshIn)
+}
+
+function persistTokens() {
+  if (!cachedTokens) return
+  try {
+    let content = readFileSync(CONFIG_PATH, 'utf-8')
+    content = content.replace(
+      /access_token:\s*"[^"]*"/,
+      `access_token: "${cachedTokens.accessToken}"`,
+    )
+    content = content.replace(
+      /refresh_token:\s*"[^"]*"/,
+      `refresh_token: "${cachedTokens.refreshToken}"`,
+    )
+    content = content.replace(
+      /expires_at:\s*\d+/,
+      `expires_at: ${cachedTokens.expiresAt}`,
+    )
+    writeFileSync(CONFIG_PATH, content, 'utf-8')
+    log('info', 'Persisted updated tokens to config.yaml')
+  } catch (err) {
+    log('error', `Failed to persist tokens to config.yaml: ${err}`)
+  }
 }
 
 export function getAccessToken(): string | null {

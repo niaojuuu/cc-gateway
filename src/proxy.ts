@@ -1,6 +1,7 @@
 import { createServer as createHttpsServer, type ServerOptions } from 'https'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'http'
 import { readFileSync } from 'fs'
+import { gunzipSync } from 'zlib'
 import { request as httpsRequest } from 'https'
 import { URL } from 'url'
 import type { Config } from './config.js'
@@ -199,8 +200,9 @@ async function handleRequest(
         })
         proxyRes.on('end', () => {
           const raw = Buffer.concat(chunks)
-          // Log raw bytes — may be gzip, so toString may produce garbage
-          setRestricted(`Anthropic rate limited (HTTP 429): ${raw.length} bytes`)
+          const bodyText = decompressBody(raw, responseHeaders)
+          setRestricted(`Anthropic rate limited (HTTP 429): ${bodyText}`)
+          log('error', `Upstream 429 response:\n${bodyText}`)
           res.end()
         })
         return
@@ -215,7 +217,11 @@ async function handleRequest(
         proxyRes.on('end', () => {
           res.end()
           if (status >= 500) {
-            setRestricted(`Upstream error (HTTP ${status}): ${Buffer.concat(chunks).length} bytes`)
+            const raw = Buffer.concat(chunks)
+            const bodyText = decompressBody(raw, responseHeaders)
+            setRestricted(`Upstream error (HTTP ${status}): ${bodyText}`)
+            log('error', `Upstream ${status} response:\n${bodyText}`)
+          }
           }
         })
         return
@@ -389,4 +395,16 @@ function buildVerificationPayload(config: Config) {
       system_block_count: rewritten.system.length,
     },
   }
+}
+
+function decompressBody(raw: Buffer, headers: Record<string, unknown>): string {
+  const encoding = String(headers['content-encoding'] || '').toLowerCase()
+  if (encoding.includes('gzip')) {
+    try {
+      return gunzipSync(raw).toString('utf-8')
+    } catch {
+      return `[gzip decompression failed, ${raw.length} bytes]`
+    }
+  }
+  return raw.toString('utf-8')
 }

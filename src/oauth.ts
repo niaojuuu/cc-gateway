@@ -113,11 +113,11 @@ function persistTokens() {
     log('info', `persistTokens: regex match access_token: ${!!origAccessMatch}, refresh_token: ${!!origRefreshMatch}, expires_at: ${!!origExpiresMatch}`)
 
     content = content.replace(
-      /access_token:\s*"[^"]*"/,
+      /access_token:.*/,
       `access_token: "${cachedTokens.accessToken}"`,
     )
     content = content.replace(
-      /refresh_token:\s*"[^"]*"/,
+      /refresh_token:.*/,
       `refresh_token: "${cachedTokens.refreshToken}"`,
     )
     content = content.replace(

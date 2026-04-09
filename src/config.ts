@@ -48,6 +48,9 @@ export type Config = {
     level: 'debug' | 'info' | 'warn' | 'error'
     audit: boolean
   }
+  admin?: {
+    secret?: string
+  }
 }
 
 export function loadConfig(configPath?: string): Config {

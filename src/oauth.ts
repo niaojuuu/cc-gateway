@@ -1,10 +1,13 @@
 import { request as httpsRequest } from 'https'
 import { readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
+import { createHash, randomBytes } from 'crypto'
 import { log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
+const AUTHORIZE_URL = 'https://platform.claude.com/oauth/authorize'
+const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
 const CONFIG_PATH = resolve(process.cwd(), 'config.yaml')
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const DEFAULT_SCOPES = [
@@ -192,4 +195,84 @@ function refreshOAuthToken(refreshToken: string): Promise<OAuthTokens> {
     req.write(body)
     req.end()
   })
+}
+
+// ── PKCE + OAuth Login Flow ──
+
+export function generatePKCE(): { codeVerifier: string; codeChallenge: string; state: string } {
+  const codeVerifier = randomBytes(64).toString('base64url')
+  const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url')
+  const state = randomBytes(16).toString('hex')
+  return { codeVerifier, codeChallenge, state }
+}
+
+export function buildAuthUrl(codeChallenge: string, state: string): string {
+  const url = new URL(AUTHORIZE_URL)
+  url.searchParams.set('code', 'true')
+  url.searchParams.set('client_id', CLIENT_ID)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('redirect_uri', REDIRECT_URI)
+  url.searchParams.set('scope', DEFAULT_SCOPES.join(' '))
+  url.searchParams.set('code_challenge', codeChallenge)
+  url.searchParams.set('code_challenge_method', 'S256')
+  url.searchParams.set('state', state)
+  return url.toString()
+}
+
+export async function loginWithCode(code: string, codeVerifier: string): Promise<void> {
+  const body = JSON.stringify({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT_URI,
+    client_id: CLIENT_ID,
+    code_verifier: codeVerifier,
+    state: randomBytes(16).toString('hex'),
+  })
+
+  const data = await new Promise<any>((resolve, reject) => {
+    const url = new URL(TOKEN_URL)
+    const agent = getProxyAgent()
+    const req = httpsRequest(
+      {
+        hostname: url.hostname,
+        port: 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': String(Buffer.byteLength(body)),
+        },
+        ...(agent && { agent }),
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk) => chunks.push(chunk))
+        res.on('end', () => {
+          const data = JSON.parse(Buffer.concat(chunks).toString('utf-8'))
+          if (res.statusCode !== 200) {
+            reject(new Error(`OAuth login failed (${res.statusCode}): ${JSON.stringify(data)}`))
+            return
+          }
+          resolve(data)
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+
+  cachedTokens = {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
+  }
+
+  log('info', 'OAuth login successful!')
+  log('info', `  access_token:  ${data.access_token.slice(0, 20)}...`)
+  log('info', `  refresh_token: ${data.refresh_token.slice(0, 20)}...`)
+  log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+  persistTokens()
+  scheduleRefresh(data.refresh_token)
 }

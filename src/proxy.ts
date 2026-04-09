@@ -6,7 +6,7 @@ import { request as httpsRequest } from 'https'
 import { URL } from 'url'
 import type { Config } from './config.js'
 import { authenticate, initAuth } from './auth.js'
-import { getAccessToken, forceRefreshToken } from './oauth.js'
+import { getAccessToken, forceRefreshToken, generatePKCE, buildAuthUrl, loginWithCode } from './oauth.js'
 import { rewriteBody, rewriteHeaders } from './rewriter.js'
 import { audit, log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
@@ -79,6 +79,59 @@ async function handleRequest(
       upstream: config.upstream.url,
       clients: config.auth.tokens.map(t => t.name),
     }))
+    return
+  }
+
+  // ── Login routes ──
+  const adminSecret = config.admin?.secret
+
+  if (path === '/_login' && method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.end(buildLoginPage(!!adminSecret))
+    return
+  }
+
+  if (path === '/_login/start' && method === 'POST') {
+    const body = await readBody(req)
+    if (adminSecret) {
+      let parsed: any
+      try { parsed = JSON.parse(body) } catch {}
+      if (!parsed?.secret || parsed.secret !== adminSecret) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid password' }))
+        return
+      }
+    }
+    const pkce = generatePKCE()
+    const authUrl = buildAuthUrl(pkce.codeChallenge, pkce.state)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ authUrl, codeVerifier: pkce.codeVerifier, state: pkce.state }))
+    return
+  }
+
+  if (path === '/_login/callback' && method === 'POST') {
+    const body = await readBody(req)
+    let parsed: any
+    try { parsed = JSON.parse(body) } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON body' }))
+      return
+    }
+    if (!parsed?.code || !parsed?.codeVerifier) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Missing code or codeVerifier' }))
+      return
+    }
+    try {
+      await loginWithCode(parsed.code, parsed.codeVerifier)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true, message: 'Login successful, tokens updated' }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log('error', `Login callback failed: ${msg}`)
+      res.writeHead(502, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: msg }))
+    }
     return
   }
 
@@ -443,4 +496,82 @@ function decompressBody(raw: Buffer, headers: Record<string, unknown>): string {
     }
   }
   return raw.toString('utf-8')
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk) => chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+  })
+}
+
+function buildLoginPage(hasSecret: boolean): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>CC Gateway Login</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:520px;margin:40px auto;padding:0 20px;color:#333}
+h1{font-size:1.4em}input,button{font-size:14px;padding:8px 12px}
+input{width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px}
+button{background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-top:8px}
+button:hover{background:#1d4ed8}
+.step{margin:20px 0;padding:16px;border:1px solid #e5e7eb;border-radius:8px}
+.step h2{font-size:1em;margin:0 0 8px}
+#result{margin-top:12px;padding:12px;border-radius:4px;display:none}
+.ok{background:#d1fae5;color:#065f46}
+.err{background:#fee2e2;color:#991b1b}
+a{word-break:break-all}
+.hidden{display:none}
+</style></head><body>
+<h1>CC Gateway - OAuth Login</h1>
+${hasSecret ? `<div class="step" id="step0">
+  <h2>1. Enter password</h2>
+  <input type="password" id="secret" placeholder="Admin secret">
+</div>` : ''}
+<div class="step">
+  <h2>${hasSecret ? '2' : '1'}. Get login link</h2>
+  <button id="btnStart">Get Login Link</button>
+  <div id="authLink" class="hidden" style="margin-top:12px">
+    <p>Open this link in your browser:</p>
+    <a id="linkUrl" href="#" target="_blank"></a>
+  </div>
+</div>
+<div class="step">
+  <h2>${hasSecret ? '3' : '2'}. Paste callback URL</h2>
+  <p>After logging in, you'll be redirected to a URL. Copy the full URL and paste here:</p>
+  <input id="callbackUrl" placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=...">
+  <button id="btnLogin">Confirm Login</button>
+</div>
+<div id="result"></div>
+<script>
+let codeVerifier='';
+document.getElementById('btnStart').onclick=async()=>{
+  const opts={method:'POST',headers:{'Content-Type':'application/json'}};
+  ${hasSecret ? `const s=document.getElementById('secret').value;
+  if(!s){alert('Please enter password');return;}
+  opts.body=JSON.stringify({secret:s});` : `opts.body=JSON.stringify({});`}
+  const r=await fetch('/_login/start',opts);
+  const d=await r.json();
+  if(d.error){showResult(d.error,1);return;}
+  codeVerifier=d.codeVerifier;
+  const link=document.getElementById('linkUrl');
+  link.href=d.authUrl;link.textContent=d.authUrl;
+  document.getElementById('authLink').classList.remove('hidden');
+};
+document.getElementById('btnLogin').onclick=async()=>{
+  const url=document.getElementById('callbackUrl').value.trim();
+  if(!url||!codeVerifier){alert('Get login link first, then paste callback URL');return;}
+  let code='';
+  try{code=new URL(url).searchParams.get('code')||'';}catch{code=url;}
+  if(!code){showResult('Could not extract code from URL',1);return;}
+  const r=await fetch('/_login/callback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,codeVerifier})});
+  const d=await r.json();
+  if(d.success){showResult('Login successful! Tokens updated.',0);}
+  else{showResult(d.error||'Login failed',1);}
+};
+function showResult(msg,isErr){
+  const el=document.getElementById('result');
+  el.className=isErr?'err':'ok';el.textContent=msg;el.style.display='block';
+}
+</script></body></html>`
 }

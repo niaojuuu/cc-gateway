@@ -135,8 +135,8 @@ env:
   is_running_with_bun: false
   is_ci: false
   is_claude_ai_auth: true
-  version: "2.1.81"
-  version_base: "2.1.81"
+  version: "2.1.91"
+  version_base: "2.1.91"
   build_time: "2026-03-20T21:26:18Z"
   deployment_environment: unknown-darwin
   vcs: git

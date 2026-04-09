@@ -121,13 +121,19 @@ function persistTokens() {
       log('warn', 'persistTokens: no changes to write (regex did not match?)')
       return
     }
+    const newAccessMatch = content.match(/access_token:\s*"([^"]*)"/)
+    log('info', `persistTokens: writing to ${CONFIG_PATH} (${Buffer.byteLength(content)} bytes)`)
+    log('info', `persistTokens: new access_token prefix: ${newAccessMatch?.[1]?.slice(0, 20) || 'NOT FOUND'}...`)
     writeFileSync(CONFIG_PATH, content, 'utf-8')
     // Verify write
     const verify = readFileSync(CONFIG_PATH, 'utf-8')
+    const verifyAccessMatch = verify.match(/access_token:\s*"([^"]*)"/)
     if (verify !== content) {
-      log('error', `persistTokens: write verification FAILED (file unchanged after write). Path: ${CONFIG_PATH}`)
+      log('error', `persistTokens: write verification FAILED (file unchanged after write)`)
+      log('error', `persistTokens: expected access_token prefix: ${newAccessMatch?.[1]?.slice(0, 20) || '?'}`)
+      log('error', `persistTokens: file access_token prefix: ${verifyAccessMatch?.[1]?.slice(0, 20) || '?'}`)
     } else {
-      log('info', `Persisted updated tokens to config.yaml (${CONFIG_PATH})`)
+      log('info', `persistTokens: verified OK, access_token updated to ${verifyAccessMatch?.[1]?.slice(0, 20) || '?'}...`)
     }
   } catch (err) {
     log('error', `Failed to persist tokens to config.yaml (${CONFIG_PATH}): ${err}`)

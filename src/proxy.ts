@@ -197,7 +197,7 @@ async function handleRequest(
           const bodyText = decompressBody(raw, responseHeaders)
           log('error', `Upstream 401 response:\n${bodyText}`)
 
-          const refreshed = await forceRefreshToken()
+          const refreshed = true//await forceRefreshToken()
           if (refreshed) {
             res.writeHead(401, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({

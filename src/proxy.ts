@@ -6,7 +6,7 @@ import { request as httpsRequest } from 'https'
 import { URL } from 'url'
 import type { Config } from './config.js'
 import { authenticate, initAuth } from './auth.js'
-import { getAccessToken } from './oauth.js'
+import { getAccessToken, forceRefreshToken } from './oauth.js'
 import { rewriteBody, rewriteHeaders } from './rewriter.js'
 import { audit, log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
@@ -215,6 +215,12 @@ async function handleRequest(
           res.write(chunk)
         })
         proxyRes.on('end', () => {
+          if (status === 401) {
+            const raw = Buffer.concat(chunks)
+            const bodyText = decompressBody(raw, responseHeaders)
+            log('error', `Upstream 401 response:\n${bodyText}`)
+            forceRefreshToken()
+          }
           res.end()
           if (status >= 500) {
             const raw = Buffer.concat(chunks)

@@ -124,6 +124,28 @@ export function getAccessToken(): string | null {
   return cachedTokens.accessToken
 }
 
+let refreshing = false
+export async function forceRefreshToken(): Promise<void> {
+  if (refreshing || !cachedTokens) return
+  refreshing = true
+  try {
+    const oldAccessToken = cachedTokens.accessToken
+    const oldRefreshToken = cachedTokens.refreshToken
+    log('warn', 'Forcing OAuth token refresh (received 401)...')
+    cachedTokens = await refreshOAuthToken(cachedTokens.refreshToken)
+    log('info', `Token refreshed (forced):`)
+    log('info', `  access_token:  ${oldAccessToken.slice(0, 20)}... → ${cachedTokens.accessToken.slice(0, 20)}...`)
+    log('info', `  refresh_token: ${oldRefreshToken.slice(0, 20)}... → ${cachedTokens.refreshToken.slice(0, 20)}...`)
+    log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
+    persistTokens()
+    scheduleRefresh(cachedTokens.refreshToken)
+  } catch (err) {
+    log('error', `Forced OAuth refresh failed: ${err}`)
+  } finally {
+    refreshing = false
+  }
+}
+
 function refreshOAuthToken(refreshToken: string): Promise<OAuthTokens> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({

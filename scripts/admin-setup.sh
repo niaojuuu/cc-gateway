@@ -11,7 +11,9 @@ CONFIG="config.yaml"
 if [[ -f "$CONFIG" ]]; then
   echo "config.yaml exists. Starting gateway..."
   if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-    docker compose up -d --build
+    DOCKER_COMPOSE="docker compose"
+    command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1 && DOCKER_COMPOSE="docker-compose"
+    $DOCKER_COMPOSE up -d --build
   else
     echo "Docker not available, starting with Node..."
     npm run build && npm start
@@ -168,13 +170,15 @@ echo ""
 # ── 8. Start gateway ──
 echo "Starting gateway..."
 if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-  if docker compose up -d --build 2>&1; then
+  DOCKER_COMPOSE="docker compose"
+  command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1 && DOCKER_COMPOSE="docker-compose"
+  if $DOCKER_COMPOSE up -d --build 2>&1; then
     echo "✓ Gateway running (Docker): ${GATEWAY_URL}"
   else
     echo ""
     echo "Docker build failed. If behind a proxy, configure Docker daemon:"
     echo '  ~/.docker/config.json → { "proxies": { "default": { "httpProxy": "http://127.0.0.1:7890", "httpsProxy": "http://127.0.0.1:7890" } } }'
-    echo "Then retry: docker compose up -d --build"
+    echo "Then retry: $DOCKER_COMPOSE up -d --build"
     echo ""
     echo "Or skip Docker:  HTTPS_PROXY=http://127.0.0.1:7890 npm run dev"
   fi

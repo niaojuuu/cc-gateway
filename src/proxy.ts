@@ -537,9 +537,9 @@ ${hasSecret ? `<div class="step" id="step0">
   </div>
 </div>
 <div class="step">
-  <h2>${hasSecret ? '3' : '2'}. Paste callback URL</h2>
-  <p>After logging in, you'll be redirected to a URL. Copy the full URL and paste here:</p>
-  <input id="callbackUrl" placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=...">
+  <h2>${hasSecret ? '3' : '2'}. Enter Authentication Code</h2>
+  <p>After confirming on the Anthropic page, copy the Authentication Code shown and paste here:</p>
+  <input id="authCode" placeholder="Paste Authentication Code here">
   <button id="btnLogin">Confirm Login</button>
 </div>
 <div id="result"></div>
@@ -559,11 +559,8 @@ document.getElementById('btnStart').onclick=async()=>{
   document.getElementById('authLink').classList.remove('hidden');
 };
 document.getElementById('btnLogin').onclick=async()=>{
-  const url=document.getElementById('callbackUrl').value.trim();
-  if(!url||!codeVerifier){alert('Get login link first, then paste callback URL');return;}
-  let code='';
-  try{code=new URL(url).searchParams.get('code')||'';}catch{code=url;}
-  if(!code){showResult('Could not extract code from URL',1);return;}
+  const code=document.getElementById('authCode').value.trim();
+  if(!code||!codeVerifier){alert('Get login link first, then paste the code');return;}
   const r=await fetch('/_login/callback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,codeVerifier})});
   const d=await r.json();
   if(d.success){showResult('Login successful! Tokens updated.',0);}

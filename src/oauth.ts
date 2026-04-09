@@ -6,8 +6,8 @@ import { log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
-const AUTHORIZE_URL = 'https://platform.claude.com/oauth/authorize'
-const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
+const AUTHORIZE_URL = 'https://claude.com/cai/oauth/authorize'
+const REDIRECT_URI = 'https://platform.claude.com/oauth/code/success?app=claude-code'
 const CONFIG_PATH = resolve(process.cwd(), 'config.yaml')
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const DEFAULT_SCOPES = [

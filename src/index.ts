@@ -1,9 +1,10 @@
 import { loadConfig } from './config.js'
 import { setLogLevel, log } from './logger.js'
-import { initOAuth } from './oauth.js'
+import { initOAuth, setConfigPath } from './oauth.js'
 import { startProxy } from './proxy.js'
 
 const configPath = process.argv[2]
+if (configPath) setConfigPath(configPath)
 
 try {
   const config = loadConfig(configPath)

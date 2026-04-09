@@ -301,7 +301,8 @@ export function rewriteHeaders(
     }
 
     if (lower === 'user-agent') {
-      out[key] = `claude-code/${config.env.version}`
+      out[key] = `claude-cli/${config.env.version} (external, cli)`
+      log('info', `Rewriting user-agent to: ${out[key]}`)
     } else if (lower === 'x-anthropic-billing-header') {
       // Strip billing header entirely — consistent with CLAUDE_CODE_ATTRIBUTION_HEADER=false
       // This also maximizes cross-session prompt cache sharing

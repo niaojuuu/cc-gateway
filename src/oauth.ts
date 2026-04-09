@@ -79,8 +79,8 @@ function scheduleRefresh(refreshToken: string) {
       )
 
       log('info', `Token refreshed:`)
-      log('info', `  access_token:  ${oldAccessToken.slice(0, 12)}... → ${cachedTokens.accessToken.slice(0, 12)}...`)
-      log('info', `  refresh_token: ${oldRefreshToken.slice(0, 12)}... → ${cachedTokens.refreshToken.slice(0, 12)}...`)
+      log('info', `  access_token:  ...${oldAccessToken.slice(-8)} → ...${cachedTokens.accessToken.slice(-8)}`)
+      log('info', `  refresh_token: ...${oldRefreshToken.slice(-8)} → ...${cachedTokens.refreshToken.slice(-8)}`)
       log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
 
       persistTokens()

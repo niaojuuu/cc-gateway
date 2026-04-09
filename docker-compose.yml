@@ -4,7 +4,7 @@ services:
     ports:
       - "8443:8443"
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config.yaml:/app/config.yaml
       - ./certs:/app/certs:ro
     restart: unless-stopped
     healthcheck:

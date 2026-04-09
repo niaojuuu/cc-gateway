@@ -219,6 +219,7 @@ async function handleRequest(
             const raw = Buffer.concat(chunks)
             const bodyText = decompressBody(raw, responseHeaders)
             log('error', `Upstream 401 response:\n${bodyText}`)
+            log('warn', 'Token refresh triggered — client should retry the request')
             forceRefreshToken()
           }
           res.end()

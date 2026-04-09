@@ -117,13 +117,13 @@ async function handleRequest(
       res.end(JSON.stringify({ error: 'Invalid JSON body' }))
       return
     }
-    if (!parsed?.code || !parsed?.codeVerifier) {
+    if (!parsed?.code || !parsed?.codeVerifier || !parsed?.state) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Missing code or codeVerifier' }))
+      res.end(JSON.stringify({ error: 'Missing code, codeVerifier, or state' }))
       return
     }
     try {
-      await loginWithCode(parsed.code, parsed.codeVerifier)
+      await loginWithCode(parsed.code, parsed.codeVerifier, parsed.state)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ success: true, message: 'Login successful, tokens updated' }))
     } catch (err) {
@@ -544,7 +544,7 @@ ${hasSecret ? `<div class="step" id="step0">
 </div>
 <div id="result"></div>
 <script>
-let codeVerifier='';
+let codeVerifier='',oauthState='';
 document.getElementById('btnStart').onclick=async()=>{
   const opts={method:'POST',headers:{'Content-Type':'application/json'}};
   ${hasSecret ? `const s=document.getElementById('secret').value;
@@ -553,7 +553,7 @@ document.getElementById('btnStart').onclick=async()=>{
   const r=await fetch('/_login/start',opts);
   const d=await r.json();
   if(d.error){showResult(d.error,1);return;}
-  codeVerifier=d.codeVerifier;
+  codeVerifier=d.codeVerifier;oauthState=d.state;
   const link=document.getElementById('linkUrl');
   link.href=d.authUrl;link.textContent=d.authUrl;
   document.getElementById('authLink').classList.remove('hidden');
@@ -561,7 +561,7 @@ document.getElementById('btnStart').onclick=async()=>{
 document.getElementById('btnLogin').onclick=async()=>{
   const code=document.getElementById('authCode').value.trim();
   if(!code||!codeVerifier){alert('Get login link first, then paste the code');return;}
-  const r=await fetch('/_login/callback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,codeVerifier})});
+  const r=await fetch('/_login/callback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,codeVerifier,state:oauthState})});
   const d=await r.json();
   if(d.success){showResult('Login successful! Tokens updated.',0);}
   else{showResult(d.error||'Login failed',1);}

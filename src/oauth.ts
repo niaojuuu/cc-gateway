@@ -219,14 +219,15 @@ export function buildAuthUrl(codeChallenge: string, state: string): string {
   return url.toString()
 }
 
-export async function loginWithCode(code: string, codeVerifier: string): Promise<void> {
+export async function loginWithCode(code: string, codeVerifier: string, state: string): Promise<void> {
   const body = JSON.stringify({
     grant_type: 'authorization_code',
     code,
     redirect_uri: REDIRECT_URI,
     client_id: CLIENT_ID,
     code_verifier: codeVerifier,
-    state: randomBytes(16).toString('hex'),
+    state,
+    expires_in: 365 * 24 * 60 * 60,
   })
 
   const data = await new Promise<any>((resolve, reject) => {

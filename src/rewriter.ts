@@ -3,7 +3,7 @@ import { log } from './logger.js'
 
 // ── CCH hash ──
 // As of v2.1.91, CCH is fixed to "000" (no longer computed from message content)
-const CCH_HASH = '000'
+const CCH_HASH = '00000'
 
 /**
  * Rewrite identity fields in the API request body.
@@ -115,7 +115,7 @@ function rewritePromptText(text: string, config: Config, hash: string | null): s
   // 1. Billing header fingerprint (only when hash is available)
   if (hash !== null) {
     result = result.replace(
-      /cc_version=[\d.]+\.[a-f0-9]{3}/g,
+      /cc_version=[\d.]+\.[a-f0-9]{5}/g,
       `cc_version=${config.env.version}.${hash}`,
     )
   }

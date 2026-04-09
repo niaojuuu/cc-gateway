@@ -104,12 +104,6 @@ function persistTokens() {
   if (!cachedTokens) return
   try {
     let content = readFileSync(CONFIG_PATH, 'utf-8')
-    const orig = content
-
-    // Show current token line in file
-    const origAccessLine = orig.split('\n').find(l => l.trim().startsWith('access_token:'))
-    log('info', `persistTokens: file access_token line: ${origAccessLine?.trim() || 'NOT FOUND'}`)
-
     content = content.replace(
       /access_token:.*/,
       `access_token: "${cachedTokens.accessToken}"`,
@@ -122,23 +116,10 @@ function persistTokens() {
       /expires_at:\s*\d+/,
       `expires_at: ${cachedTokens.expiresAt}`,
     )
-    if (content === orig) {
-      log('warn', 'persistTokens: no changes to write (content unchanged after replace)')
-      return
-    }
-    log('info', `persistTokens: writing to ${CONFIG_PATH} (${Buffer.byteLength(content)} bytes)`)
     writeFileSync(CONFIG_PATH, content, 'utf-8')
-    // Verify write
-    const verify = readFileSync(CONFIG_PATH, 'utf-8')
-    const verifyAccessLine = verify.split('\n').find(l => l.trim().startsWith('access_token:'))
-    if (verify !== content) {
-      log('error', `persistTokens: write verification FAILED (file unchanged after write)`)
-      log('error', `persistTokens: file access_token line after write: ${verifyAccessLine?.trim() || 'NOT FOUND'}`)
-    } else {
-      log('info', `persistTokens: verified OK, file now has: ${verifyAccessLine?.trim() || 'NOT FOUND'}`)
-    }
+    log('info', 'Persisted updated tokens to config.yaml')
   } catch (err) {
-    log('error', `Failed to persist tokens to config.yaml (${CONFIG_PATH}): ${err}`)
+    log('error', `Failed to persist tokens to config.yaml: ${err}`)
   }
 }
 

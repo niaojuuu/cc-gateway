@@ -6,6 +6,7 @@ import { log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
+const CREATE_API_KEY_URL = 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key'
 const AUTHORIZE_URL = 'https://claude.com/cai/oauth/authorize'
 const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
 let CONFIG_PATH = resolve(process.cwd(), 'config.yaml')
@@ -30,6 +31,49 @@ type OAuthTokens = {
 }
 
 let cachedTokens: OAuthTokens | null = null
+let cachedApiKey: string | null = null
+
+export function getApiKey(): string | null {
+  return cachedApiKey
+}
+
+async function createApiKey(accessToken: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(CREATE_API_KEY_URL)
+    const agent = getProxyAgent()
+    const req = httpsRequest(
+      {
+        hostname: url.hostname,
+        port: 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Length': '0',
+        },
+        ...(agent && { agent }),
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk) => chunks.push(chunk))
+        res.on('end', () => {
+          const data = JSON.parse(Buffer.concat(chunks).toString('utf-8'))
+          if (res.statusCode !== 200) {
+            reject(new Error(`create_api_key failed (${res.statusCode}): ${JSON.stringify(data)}`))
+            return
+          }
+          if (!data.raw_key) {
+            reject(new Error('create_api_key returned no raw_key'))
+            return
+          }
+          resolve(data.raw_key)
+        })
+      },
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}
 
 /**
  * Initialize OAuth.
@@ -40,7 +84,14 @@ export async function initOAuth(oauth: {
   access_token?: string
   refresh_token: string
   expires_at?: number
+  api_key?: string
 }): Promise<void> {
+  // Use cached API key from config if available
+  if (oauth.api_key) {
+    cachedApiKey = oauth.api_key
+    log('info', `Using cached API key from config: ${cachedApiKey.slice(0, 20)}...`)
+  }
+
   const now = Date.now()
   const expiresAt = oauth.expires_at ?? 0
   const fiveMinutes = 5 * 60 * 1000
@@ -54,6 +105,18 @@ export async function initOAuth(oauth: {
     }
     const remaining = Math.round((expiresAt - now) / 60_000)
     log('info', `Using existing access token (expires in ${remaining} min)`)
+
+    // If no cached API key, create one now
+    if (!cachedApiKey) {
+      try {
+        cachedApiKey = await createApiKey(cachedTokens.accessToken)
+        log('info', `API key created: ${cachedApiKey.slice(0, 20)}...`)
+        persistTokens()
+      } catch (err) {
+        log('error', `Failed to create API key: ${err}`)
+      }
+    }
+
     scheduleRefresh(oauth.refresh_token)
     return
   }
@@ -67,6 +130,16 @@ export async function initOAuth(oauth: {
 
   cachedTokens = await refreshOAuthToken(oauth.refresh_token)
   log('info', `OAuth token acquired, expires at ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+  // Create API key after token refresh
+  try {
+    cachedApiKey = await createApiKey(cachedTokens.accessToken)
+    log('info', `API key created: ${cachedApiKey.slice(0, 20)}...`)
+  } catch (err) {
+    log('error', `Failed to create API key: ${err}`)
+  }
+
+  persistTokens()
   scheduleRefresh(oauth.refresh_token)
 }
 
@@ -90,6 +163,14 @@ function scheduleRefresh(refreshToken: string) {
       log('info', `  access_token:  ${oldAccessToken.slice(0, 20)}... → ${cachedTokens.accessToken.slice(0, 20)}...`)
       log('info', `  refresh_token: ${oldRefreshToken.slice(0, 20)}... → ${cachedTokens.refreshToken.slice(0, 20)}...`)
       log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+      // Refresh API key
+      try {
+        cachedApiKey = await createApiKey(cachedTokens.accessToken)
+        log('info', `  api_key:       ${cachedApiKey.slice(0, 20)}...`)
+      } catch (err) {
+        log('error', `Failed to refresh API key after token refresh: ${err}`)
+      }
 
       persistTokens()
       scheduleRefresh(cachedTokens.refreshToken || refreshToken)
@@ -116,6 +197,20 @@ function persistTokens() {
       /expires_at:\s*\d+/,
       `expires_at: ${cachedTokens.expiresAt}`,
     )
+    if (cachedApiKey) {
+      if (/api_key:/.test(content)) {
+        content = content.replace(
+          /api_key:.*/,
+          `api_key: "${cachedApiKey}"`,
+        )
+      } else {
+        // Insert api_key after expires_at line
+        content = content.replace(
+          /(expires_at:\s*\d+\n)/,
+          `$1  api_key: "${cachedApiKey}"\n`,
+        )
+      }
+    }
     writeFileSync(CONFIG_PATH, content, 'utf-8')
     log('info', 'Persisted updated tokens to config.yaml')
   } catch (err) {
@@ -145,6 +240,15 @@ export async function forceRefreshToken(): Promise<boolean> {
     log('info', `  access_token:  ${oldAccessToken.slice(0, 20)}... → ${cachedTokens.accessToken.slice(0, 20)}...`)
     log('info', `  refresh_token: ${oldRefreshToken.slice(0, 20)}... → ${cachedTokens.refreshToken.slice(0, 20)}...`)
     log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+    // Refresh API key after forced token refresh
+    try {
+      cachedApiKey = await createApiKey(cachedTokens.accessToken)
+      log('info', `  api_key:       ${cachedApiKey.slice(0, 20)}...`)
+    } catch (err) {
+      log('error', `Failed to refresh API key after forced token refresh: ${err}`)
+    }
+
     persistTokens()
     scheduleRefresh(cachedTokens.refreshToken)
     return true
@@ -277,6 +381,14 @@ export async function loginWithCode(code: string, codeVerifier: string, state: s
   log('info', `  access_token:  ${data.access_token.slice(0, 20)}...`)
   log('info', `  refresh_token: ${data.refresh_token.slice(0, 20)}...`)
   log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
+
+  // Create API key
+  try {
+    cachedApiKey = await createApiKey(cachedTokens.accessToken)
+    log('info', `  api_key:       ${cachedApiKey.slice(0, 20)}...`)
+  } catch (err) {
+    log('error', `Failed to create API key after login: ${err}`)
+  }
 
   persistTokens()
   scheduleRefresh(data.refresh_token)

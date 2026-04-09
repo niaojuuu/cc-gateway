@@ -25,6 +25,7 @@ export type Config = {
     access_token?: string
     refresh_token: string
     expires_at?: number
+    api_key?: string
   }
   identity: {
     device_id: string

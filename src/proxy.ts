@@ -6,7 +6,7 @@ import { request as httpsRequest } from 'https'
 import { URL } from 'url'
 import type { Config } from './config.js'
 import { authenticate, initAuth } from './auth.js'
-import { getAccessToken, forceRefreshToken, generatePKCE, buildAuthUrl, loginWithCode } from './oauth.js'
+import { getAccessToken, forceRefreshToken, generatePKCE, buildAuthUrl, loginWithCode, getApiKey } from './oauth.js'
 import { rewriteBody, rewriteHeaders } from './rewriter.js'
 import { audit, log } from './logger.js'
 import { getProxyAgent } from './proxy-agent.js'
@@ -209,10 +209,11 @@ async function handleRequest(
     config,
   )
 
-  // Inject the real OAuth token via x-api-key.
-  // Anthropic accepts sk-ant-oat01- tokens in x-api-key header.
-  rewrittenHeaders['x-api-key'] = oauthToken
-  log('info', `Forwarding with x-api-key prefix: ${oauthToken.slice(0, 20)}...`)
+  // Inject the API key via x-api-key.
+  // Use create_api_key generated key if available, otherwise fall back to OAuth token.
+  const apiKey = getApiKey()
+  rewrittenHeaders['x-api-key'] = apiKey || oauthToken
+  log('info', `Forwarding with x-api-key: ${(apiKey || oauthToken).slice(0, 20)}...`)
 
   // Forward to upstream
   const upstreamUrl = new URL(path, upstream)

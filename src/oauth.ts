@@ -105,6 +105,13 @@ function persistTokens() {
   try {
     let content = readFileSync(CONFIG_PATH, 'utf-8')
     const orig = content
+
+    // Check if regex matches before replacing
+    const origAccessMatch = orig.match(/access_token:\s*"[^"]*"/)
+    const origRefreshMatch = orig.match(/refresh_token:\s*"[^"]*"/)
+    const origExpiresMatch = orig.match(/expires_at:\s*\d+/)
+    log('info', `persistTokens: regex match access_token: ${!!origAccessMatch}, refresh_token: ${!!origRefreshMatch}, expires_at: ${!!origExpiresMatch}`)
+
     content = content.replace(
       /access_token:\s*"[^"]*"/,
       `access_token: "${cachedTokens.accessToken}"`,
@@ -118,20 +125,17 @@ function persistTokens() {
       `expires_at: ${cachedTokens.expiresAt}`,
     )
     if (content === orig) {
-      log('warn', 'persistTokens: no changes to write (regex did not match?)')
+      log('warn', 'persistTokens: no changes to write (content unchanged after replace)')
       return
     }
-    const newAccessMatch = content.match(/access_token:\s*"([^"]*)"/)
     log('info', `persistTokens: writing to ${CONFIG_PATH} (${Buffer.byteLength(content)} bytes)`)
-    log('info', `persistTokens: new access_token prefix: ${newAccessMatch?.[1]?.slice(0, 20) || 'NOT FOUND'}...`)
     writeFileSync(CONFIG_PATH, content, 'utf-8')
     // Verify write
     const verify = readFileSync(CONFIG_PATH, 'utf-8')
     const verifyAccessMatch = verify.match(/access_token:\s*"([^"]*)"/)
     if (verify !== content) {
       log('error', `persistTokens: write verification FAILED (file unchanged after write)`)
-      log('error', `persistTokens: expected access_token prefix: ${newAccessMatch?.[1]?.slice(0, 20) || '?'}`)
-      log('error', `persistTokens: file access_token prefix: ${verifyAccessMatch?.[1]?.slice(0, 20) || '?'}`)
+      log('error', `persistTokens: file access_token: ${verifyAccessMatch?.[1]?.slice(0, 20) || 'NOT FOUND'}`)
     } else {
       log('info', `persistTokens: verified OK, access_token updated to ${verifyAccessMatch?.[1]?.slice(0, 20) || '?'}...`)
     }

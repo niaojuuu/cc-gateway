@@ -188,6 +188,28 @@ async function handleRequest(
       // upstream's gzip stream — Node.js will use chunked transfer instead
       delete responseHeaders['content-length']
 
+      // 401: don't forward upstream headers — we return our own clean JSON
+      if (status === 401) {
+        const chunks: Buffer[] = []
+        proxyRes.on('data', (chunk) => chunks.push(chunk))
+        proxyRes.on('end', () => {
+          const raw = Buffer.concat(chunks)
+          const bodyText = decompressBody(raw, responseHeaders)
+          log('error', `Upstream 401 response:\n${bodyText}`)
+          forceRefreshToken()
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            type: 'error',
+            error: {
+              type: 'authentication_error',
+              message: 'Gateway token expired, refreshing. Please retry.',
+            },
+            gateway_retry_hint: true,
+          }))
+        })
+        return
+      }
+
       // Forward all responses with upstream headers (gzip etc.)
       res.writeHead(status, responseHeaders)
 
@@ -215,13 +237,6 @@ async function handleRequest(
           res.write(chunk)
         })
         proxyRes.on('end', () => {
-          if (status === 401) {
-            const raw = Buffer.concat(chunks)
-            const bodyText = decompressBody(raw, responseHeaders)
-            log('error', `Upstream 401 response:\n${bodyText}`)
-            log('warn', 'Token refresh triggered — client should retry the request')
-            forceRefreshToken()
-          }
           res.end()
           if (status >= 500) {
             const raw = Buffer.concat(chunks)

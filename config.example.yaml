@@ -76,3 +76,7 @@ process:
 logging:
   level: info  # debug | info | warn | error
   audit: true  # log which client made each request
+
+# Admin login (/_login page)
+admin:
+  secret: ""  # set a password to protect /_login; leave empty for no password

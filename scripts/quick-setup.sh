@@ -101,6 +101,9 @@ process:
 logging:
   level: info
   audit: true
+
+admin:
+  secret: "$(openssl rand -hex 16)"
 YAML
 
 echo ""

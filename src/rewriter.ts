@@ -74,6 +74,14 @@ function rewriteMessagesBody(body: any, config: Config) {
   // If client set CLAUDE_CODE_ATTRIBUTION_HEADER=false, the block won't exist.
   // This is the gateway-side safety net for clients that didn't set it.
   if (Array.isArray(body.system)) {
+    // Strip unsupported cache_control.scope field from system blocks (v2.1.91+)
+    for (const item of body.system) {
+      if (typeof item === 'object' && item?.cache_control?.scope) {
+        delete item.cache_control.scope
+        log('debug', 'Stripped cache_control.scope from system block')
+      }
+    }
+
     // Remove system blocks that are purely the billing header
     body.system = body.system.filter((item: any) => {
       const text = typeof item === 'string' ? item : item?.text

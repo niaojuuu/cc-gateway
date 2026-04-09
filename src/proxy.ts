@@ -192,20 +192,35 @@ async function handleRequest(
       if (status === 401) {
         const chunks: Buffer[] = []
         proxyRes.on('data', (chunk) => chunks.push(chunk))
-        proxyRes.on('end', () => {
+        proxyRes.on('end', async () => {
           const raw = Buffer.concat(chunks)
           const bodyText = decompressBody(raw, responseHeaders)
           log('error', `Upstream 401 response:\n${bodyText}`)
-          forceRefreshToken()
-          res.writeHead(401, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            type: 'error',
-            error: {
-              type: 'authentication_error',
-              message: 'Gateway token expired, refreshing. Please retry.',
-            },
-            gateway_retry_hint: true,
-          }))
+
+          const refreshed = await forceRefreshToken()
+          if (refreshed) {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({
+              type: 'error',
+              error: {
+                type: 'authentication_error',
+                message: 'Gateway token expired, refreshing. Please retry.',
+              },
+              gateway_retry_hint: true,
+            }))
+          } else {
+            log('error', 'Token refresh failed — forwarding stopped')
+            setRestricted('OAuth token refresh failed after 401')
+            res.writeHead(503, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({
+              type: 'error',
+              error: {
+                type: 'api_error',
+                message: 'Gateway authentication failed, token refresh failed. Manual restart required.',
+              },
+              gateway_restricted: true,
+            }))
+          }
         })
         return
       }

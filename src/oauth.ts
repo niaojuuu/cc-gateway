@@ -125,8 +125,8 @@ export function getAccessToken(): string | null {
 }
 
 let refreshing = false
-export async function forceRefreshToken(): Promise<void> {
-  if (refreshing || !cachedTokens) return
+export async function forceRefreshToken(): Promise<boolean> {
+  if (refreshing || !cachedTokens) return false
   refreshing = true
   try {
     const oldAccessToken = cachedTokens.accessToken
@@ -139,8 +139,10 @@ export async function forceRefreshToken(): Promise<void> {
     log('info', `  expires_at:    ${new Date(cachedTokens.expiresAt).toISOString()}`)
     persistTokens()
     scheduleRefresh(cachedTokens.refreshToken)
+    return true
   } catch (err) {
     log('error', `Forced OAuth refresh failed: ${err}`)
+    return false
   } finally {
     refreshing = false
   }

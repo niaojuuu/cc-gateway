@@ -13,6 +13,7 @@ if [[ -f "$CONFIG" ]]; then
   if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
     DOCKER_COMPOSE="docker compose"
     command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1 && DOCKER_COMPOSE="docker-compose"
+    $DOCKER_COMPOSE down 2>/dev/null
     $DOCKER_COMPOSE up -d --build
   else
     echo "Docker not available, starting with Node..."
@@ -172,6 +173,7 @@ echo "Starting gateway..."
 if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
   DOCKER_COMPOSE="docker compose"
   command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1 && DOCKER_COMPOSE="docker-compose"
+  $DOCKER_COMPOSE down 2>/dev/null
   if $DOCKER_COMPOSE up -d --build 2>&1; then
     echo "✓ Gateway running (Docker): ${GATEWAY_URL}"
   else

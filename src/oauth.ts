@@ -228,7 +228,6 @@ export async function loginWithCode(code: string, codeVerifier: string, state: s
     client_id: CLIENT_ID,
     code_verifier: codeVerifier,
     state,
-    expires_in: 365 * 24 * 60 * 60,
   })
 
   const data = await new Promise<any>((resolve, reject) => {

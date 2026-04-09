@@ -538,7 +538,7 @@ ${hasSecret ? `<div class="step" id="step0">
 </div>
 <div class="step">
   <h2>${hasSecret ? '3' : '2'}. Enter Authentication Code</h2>
-  <p>After confirming on the Anthropic page, copy the Authentication Code shown and paste here:</p>
+  <p>After confirming on the Anthropic page, paste the Authentication Code or the callback URL:</p>
   <input id="authCode" placeholder="Paste Authentication Code here">
   <button id="btnLogin">Confirm Login</button>
 </div>
@@ -559,8 +559,12 @@ document.getElementById('btnStart').onclick=async()=>{
   document.getElementById('authLink').classList.remove('hidden');
 };
 document.getElementById('btnLogin').onclick=async()=>{
-  const code=document.getElementById('authCode').value.trim();
-  if(!code||!codeVerifier){alert('Get login link first, then paste the code');return;}
+  let raw=document.getElementById('authCode').value.trim();
+  if(!raw||!codeVerifier){alert('Get login link first, then paste the code');return;}
+  let code=raw;
+  if(raw.includes('://')){try{const u=new URL(raw);code=u.searchParams.get('code')||raw}catch{}}
+  code=code.split('#')[0];
+  if(!code){alert('Could not extract code from input');return;}
   const r=await fetch('/_login/callback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,codeVerifier,state:oauthState})});
   const d=await r.json();
   if(d.success){showResult('Login successful! Tokens updated.',0);}

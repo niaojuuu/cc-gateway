@@ -7,7 +7,7 @@ import { getProxyAgent } from './proxy-agent.js'
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 const AUTHORIZE_URL = 'https://claude.com/cai/oauth/authorize'
-const REDIRECT_URI = 'https://platform.claude.com/oauth/code/success?app=claude-code'
+const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback'
 const CONFIG_PATH = resolve(process.cwd(), 'config.yaml')
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const DEFAULT_SCOPES = [
@@ -212,7 +212,7 @@ export function buildAuthUrl(codeChallenge: string, state: string): string {
   url.searchParams.set('client_id', CLIENT_ID)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('redirect_uri', REDIRECT_URI)
-  url.searchParams.set('scope', DEFAULT_SCOPES.join(' '))
+  url.searchParams.set('scope', 'user:inference')
   url.searchParams.set('code_challenge', codeChallenge)
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('state', state)

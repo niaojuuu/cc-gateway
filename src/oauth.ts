@@ -100,6 +100,7 @@ function persistTokens() {
   if (!cachedTokens) return
   try {
     let content = readFileSync(CONFIG_PATH, 'utf-8')
+    const orig = content
     content = content.replace(
       /access_token:\s*"[^"]*"/,
       `access_token: "${cachedTokens.accessToken}"`,
@@ -112,10 +113,20 @@ function persistTokens() {
       /expires_at:\s*\d+/,
       `expires_at: ${cachedTokens.expiresAt}`,
     )
+    if (content === orig) {
+      log('warn', 'persistTokens: no changes to write (regex did not match?)')
+      return
+    }
     writeFileSync(CONFIG_PATH, content, 'utf-8')
-    log('info', 'Persisted updated tokens to config.yaml')
+    // Verify write
+    const verify = readFileSync(CONFIG_PATH, 'utf-8')
+    if (verify !== content) {
+      log('error', `persistTokens: write verification FAILED (file unchanged after write). Path: ${CONFIG_PATH}`)
+    } else {
+      log('info', `Persisted updated tokens to config.yaml (${CONFIG_PATH})`)
+    }
   } catch (err) {
-    log('error', `Failed to persist tokens to config.yaml: ${err}`)
+    log('error', `Failed to persist tokens to config.yaml (${CONFIG_PATH}): ${err}`)
   }
 }
 

@@ -1,37 +1,9 @@
-import { createHash, randomBytes } from 'crypto'
 import type { Config } from './config.js'
 import { log } from './logger.js'
 
-// ── CCH hash algorithm (reverse-engineered from cli.js) ──
-const CCH_SALT = '59cf53e54c78'
-const CCH_POSITIONS = [4, 7, 20]
-
-// Fallback for non-message requests where no user message exists
-const FALLBACK_HASH = randomBytes(2).toString('hex').slice(0, 3)
-
-function computeCCH(firstUserMessageText: string, version: string): string {
-  const chars = CCH_POSITIONS.map(i => firstUserMessageText[i] || '0').join('')
-  return createHash('sha256')
-    .update(`${CCH_SALT}${chars}${version}`)
-    .digest('hex')
-    .slice(0, 3)
-}
-
-/**
- * Extract first user message text from API request messages array.
- * API format uses role: "user", content can be string or array of blocks.
- */
-function extractFirstUserMessage(messages: any[]): string {
-  if (!Array.isArray(messages)) return ''
-  const firstUser = messages.find((m: any) => m.role === 'user')
-  if (!firstUser) return ''
-  if (typeof firstUser.content === 'string') return firstUser.content
-  if (Array.isArray(firstUser.content)) {
-    const textBlock = firstUser.content.find((b: any) => b.type === 'text')
-    if (textBlock?.text) return textBlock.text
-  }
-  return ''
-}
+// ── CCH hash ──
+// As of v2.1.91, CCH is fixed to "000" (no longer computed from message content)
+const CCH_HASH = '000'
 
 /**
  * Rewrite identity fields in the API request body.
@@ -67,9 +39,7 @@ export function rewriteBody(body: Buffer, path: string, config: Config): Buffer 
  *
  * Order matters:
  * 1. Rewrite user message content (paths, etc.) FIRST
- * 2. Extract first user message from REWRITTEN content
- * 3. Compute hash from rewritten message (so it matches what server sees)
- * 4. Rewrite system prompt billing header using computed hash
+ * 2. Rewrite system prompt billing header with fixed CCH hash
  */
 function rewriteMessagesBody(body: any, config: Config) {
   // Rewrite metadata.user_id
@@ -84,7 +54,7 @@ function rewriteMessagesBody(body: any, config: Config) {
     }
   }
 
-  // Step 1: Rewrite <system-reminder> blocks in messages (injected by CC, not user content).
+  // Rewrite <system-reminder> blocks in messages (injected by CC, not user content).
   // We do NOT rewrite general user message text — that would corrupt user intent.
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
@@ -99,14 +69,6 @@ function rewriteMessagesBody(body: any, config: Config) {
       }
     }
   }
-
-  // Step 2: Extract first user message from content (after system-reminder rewrite)
-  const firstUserText = extractFirstUserMessage(body.messages)
-
-  // Step 3: Compute hash from rewritten message + canonical version
-  const version = String(config.env.version)
-  const hash = firstUserText ? computeCCH(firstUserText, version) : FALLBACK_HASH
-  log('debug', `Computed CCH: ${hash} (from ${firstUserText.length} char message)`)
 
   // Step 4: Strip billing header block from system prompt (cache optimization).
   // If client set CLAUDE_CODE_ATTRIBUTION_HEADER=false, the block won't exist.
@@ -126,15 +88,15 @@ function rewriteMessagesBody(body: any, config: Config) {
     for (let i = 0; i < body.system.length; i++) {
       const item = body.system[i]
       if (typeof item === 'string') {
-        body.system[i] = rewritePromptText(item, config, hash)
+        body.system[i] = rewritePromptText(item, config, CCH_HASH)
       } else if (item?.text) {
-        item.text = rewritePromptText(item.text, config, hash)
+        item.text = rewritePromptText(item.text, config, CCH_HASH)
       }
     }
   } else if (typeof body.system === 'string') {
     // Strip inline billing header if embedded in a single string
     body.system = body.system.replace(/x-anthropic-billing-header:[^\n]+\n?/g, '')
-    body.system = rewritePromptText(body.system, config, hash)
+    body.system = rewritePromptText(body.system, config, CCH_HASH)
   }
 }
 
@@ -339,8 +301,7 @@ export function rewriteHeaders(
     }
 
     if (lower === 'user-agent') {
-      out[key] = `claude-code/${config.env.version} (external, cli)`
-      log('info', `Rewriting user-agent to: ${out[key]}`)
+      out[key] = `claude-code/${config.env.version}`
     } else if (lower === 'x-anthropic-billing-header') {
       // Strip billing header entirely — consistent with CLAUDE_CODE_ATTRIBUTION_HEADER=false
       // This also maximizes cross-session prompt cache sharing

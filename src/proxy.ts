@@ -308,11 +308,11 @@ async function handleRequest(
         })
         proxyRes.on('end', () => {
           res.end()
+          const raw = Buffer.concat(chunks)
+          const bodyText = decompressBody(raw, responseHeaders)
+          log('error', `Upstream ${status} response from ${clientName}:\n${bodyText}`)
           if (status >= 500) {
-            const raw = Buffer.concat(chunks)
-            const bodyText = decompressBody(raw, responseHeaders)
             setRestricted(`Upstream error (HTTP ${status}): ${bodyText}`)
-            log('error', `Upstream ${status} response:\n${bodyText}`)
           }
         })
         return

@@ -395,6 +395,11 @@ function checkSSEForRestriction(buffer: string, clientName: string, method: stri
     { pattern: /"type"\s*:\s*"rate_limit_error"/, reason: 'Anthropic rate_limit_error in SSE stream' },
     // Overloaded / throttled
     { pattern: /"type"\s*:\s*"overloaded_error"/, reason: 'Anthropic overloaded_error in SSE stream' },
+    // Authentication / permission errors (e.g. disabled org, invalid key)
+    { pattern: /"type"\s*:\s*"authentication_error"/, reason: 'Anthropic authentication_error in SSE stream' },
+    { pattern: /"type"\s*:\s*"permission_error"/, reason: 'Anthropic permission_error in SSE stream' },
+    // Disabled org specific message
+    { pattern: /belongs to a disabled organization/, reason: 'Account/org disabled by Anthropic' },
     // General error event line
     { pattern: /event:\s*error/, reason: 'Anthropic error event in SSE stream' },
   ]

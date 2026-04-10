@@ -14,8 +14,17 @@ export function setConfigPath(p: string) {
   CONFIG_PATH = resolve(p)
 }
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
-const DEFAULT_SCOPES = [
+// Scopes for login authorization URL (includes org:create_api_key for API key creation)
+const LOGIN_SCOPES = [
   'org:create_api_key',
+  'user:inference',
+  'user:profile',
+  'user:sessions:claude_code',
+  'user:mcp_servers',
+  'user:file_upload',
+]
+// Scopes for token refresh (must match CLAUDE_AI_OAUTH_SCOPES, no org:create_api_key)
+const REFRESH_SCOPES = [
   'user:inference',
   'user:profile',
   'user:sessions:claude_code',
@@ -163,7 +172,7 @@ function refreshOAuthToken(refreshToken: string): Promise<OAuthTokens> {
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: CLIENT_ID,
-      scope: DEFAULT_SCOPES.join(' '),
+      scope: REFRESH_SCOPES.join(' '),
     })
 
     const url = new URL(TOKEN_URL)
@@ -218,7 +227,7 @@ export function buildAuthUrl(codeChallenge: string, state: string): string {
   url.searchParams.set('client_id', CLIENT_ID)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('redirect_uri', REDIRECT_URI)
-  url.searchParams.set('scope', DEFAULT_SCOPES.join(' '))
+  url.searchParams.set('scope', LOGIN_SCOPES.join(' '))
   url.searchParams.set('code_challenge', codeChallenge)
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('state', state)
